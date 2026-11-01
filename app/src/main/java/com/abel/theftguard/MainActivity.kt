@@ -214,8 +214,8 @@ class MainActivity : AppCompatActivity() {
         })
         addView(primaryButton("Save PIN") {
             val pin = pinInput.text.toString().trim()
-            if (pin.length < 6 || pin.any { it.isWhitespace() }) {
-                toast("PIN must be 6+ characters with no spaces")
+            if (pin.length < 8 || pin.any { it.isWhitespace() }) {
+                toast("PIN must be 8+ characters with no spaces")
             } else {
                 Prefs.setPin(this@MainActivity, pin)
                 pinInput.setText("")
@@ -224,7 +224,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        addView(fieldLabel("Authorized controller number"), fullWidthTop(dp(18)))
+        addView(fieldLabel("Restrict to one phone number (optional)"), fullWidthTop(dp(18)))
         controllerInput = EditText(this@MainActivity).apply {
             hint = "+254..."
             inputType = InputType.TYPE_CLASS_PHONE
@@ -236,15 +236,19 @@ class MainActivity : AppCompatActivity() {
         }
         addView(controllerInput, fullWidthTop(dp(8)))
         addView(TextView(this@MainActivity).apply {
-            text = "Only commands from this number are accepted. Enter the full international number, including + and country code."
+            text = "Leave EMPTY to accept commands from ANY phone (the PIN is the only lock). Or enter one number in international format to restrict it."
             textSize = 12f
             setTextColor(muted)
             setPadding(0, dp(6), 0, dp(14))
         })
-        addView(secondaryButton("Save controller number") {
+        addView(secondaryButton("Save sender rule") {
             val number = controllerInput.text.toString().trim()
             val isE164 = number.matches(Regex("\\+[1-9][0-9]{7,14}"))
-            if (!isE164) {
+            if (number.isEmpty()) {
+                Prefs.clearControllerNumber(this@MainActivity)
+                toast("Any phone can now send commands (PIN required)")
+                refresh()
+            } else if (!isE164) {
                 toast("Use international format, e.g. +254712345678")
             } else {
                 Prefs.setControllerNumber(this@MainActivity, number)
@@ -329,13 +333,13 @@ class MainActivity : AppCompatActivity() {
         addView(divider())
         addView(commandRow("/stop YOURPIN", "Stop an active alert"))
         addView(TextView(this@MainActivity).apply {
-            text = "Send commands from your saved controller number. Replace YOURPIN with your secret PIN. Location texts use SMS and may incur carrier charges."
+            text = "Send commands from any phone (or your restricted number, if you set one). Replace YOURPIN with your secret PIN. Location texts use SMS and may incur carrier charges."
             textSize = 12f
             setTextColor(muted)
             setPadding(0, dp(14), 0, 0)
         })
         addView(TextView(this@MainActivity).apply {
-            text = "Security note: both the saved controller number and PIN are required. SMS is not end-to-end encrypted, so use a unique PIN and keep it private."
+            text = "Security note: with no number restriction, the PIN is the only lock, so use a long unique PIN (8+ characters). SMS is not encrypted. Anyone who learns the PIN can locate or ring this phone."
             textSize = 11f
             setTextColor(red)
             setPadding(0, dp(10), 0, 0)
@@ -478,7 +482,6 @@ class MainActivity : AppCompatActivity() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val checks = listOf(
             "Owner PIN" to Prefs.hasPin(this),
-            "Authorized controller" to (Prefs.controllerNumber(this) != null),
             "SMS access" to (granted(Manifest.permission.RECEIVE_SMS) && granted(Manifest.permission.SEND_SMS)),
             "Torch access" to granted(Manifest.permission.CAMERA),
             "Precise location" to granted(Manifest.permission.ACCESS_FINE_LOCATION),

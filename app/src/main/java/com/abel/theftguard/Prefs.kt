@@ -43,31 +43,52 @@ object Prefs {
         sp(c).edit().putString("controller", number.trim()).apply()
     }
 
+    /** If no controller number is saved, ANY phone may send commands (the PIN is the only gate). */
     fun isAuthorizedSender(c: Context, sender: String?): Boolean {
-        val controllerDigits = controllerNumber(c)?.filter { it.isDigit() } ?: return false
         val senderDigits = sender?.filter { it.isDigit() } ?: return false
+        if (senderDigits.length < 5) return false
+        val controllerDigits = controllerNumber(c)?.filter { it.isDigit() } ?: return true
         return controllerDigits.length in 8..15 && controllerDigits == senderDigits
     }
 
-    fun isLockedOut(c: Context): Boolean {
-        val s = sp(c)
-        val start = s.getLong("fail_start", 0L)
-        if (System.currentTimeMillis() - start > WINDOW_MS) return false
-        return s.getInt("fail_count", 0) >= MAX_FAILURES
+    fun clearControllerNumber(c: Context) {
+        sp(c).edit().remove("controller").apply()
     }
 
-    fun recordFailure(c: Context) {
+    private const val GLOBAL_MAX_FAILURES = 40
+    private const val GLOBAL_WINDOW_MS = 60 * 60_000L
+
+    private fun key(sender: String?) = (sender?.filter { it.isDigit() } ?: "x")
+
+    /** Per-sender lockout (5 wrong PINs / 10 min) so a stranger can't lock the owner out,
+     *  plus a generous global ceiling (40 wrong PINs / hour) against many-number guessing. */
+    fun isLockedOut(c: Context, sender: String?): Boolean {
         val s = sp(c)
         val now = System.currentTimeMillis()
-        val start = s.getLong("fail_start", 0L)
-        if (now - start > WINDOW_MS) {
-            s.edit().putLong("fail_start", now).putInt("fail_count", 1).apply()
-        } else {
-            s.edit().putInt("fail_count", s.getInt("fail_count", 0) + 1).apply()
-        }
+        val k = key(sender)
+        val start = s.getLong("fs_$k", 0L)
+        if (now - start <= WINDOW_MS && s.getInt("fc_$k", 0) >= MAX_FAILURES) return true
+        val gs = s.getLong("g_start", 0L)
+        return now - gs <= GLOBAL_WINDOW_MS && s.getInt("g_count", 0) >= GLOBAL_MAX_FAILURES
+    }
+
+    fun recordFailure(c: Context, sender: String?) {
+        val s = sp(c)
+        val now = System.currentTimeMillis()
+        val k = key(sender)
+        val e = s.edit()
+        if (now - s.getLong("fs_$k", 0L) > WINDOW_MS) e.putLong("fs_$k", now).putInt("fc_$k", 1)
+        else e.putInt("fc_$k", s.getInt("fc_$k", 0) + 1)
+        if (now - s.getLong("g_start", 0L) > GLOBAL_WINDOW_MS) e.putLong("g_start", now).putInt("g_count", 1)
+        else e.putInt("g_count", s.getInt("g_count", 0) + 1)
+        e.apply()
     }
 
     fun clearFailures(c: Context) {
-        sp(c).edit().remove("fail_start").remove("fail_count").apply()
+        val s = sp(c)
+        val e = s.edit()
+        s.all.keys.filter { it.startsWith("fs_") || it.startsWith("fc_") || it.startsWith("g_") || it == "fail_start" || it == "fail_count" }
+            .forEach { e.remove(it) }
+        e.apply()
     }
 }

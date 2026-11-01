@@ -8,7 +8,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 
 /**
- * Commands must come from the saved controller number and include the PIN:
+ * Commands include the PIN and may come from any phone (or only the saved controller number, if one is set):
  *   /find PIN [message]  -> alarm + torch flash + lost screen + location SMS (every minute, up to 30)
  *   /where PIN           -> just reply with the location, no noise
  *   /stop PIN            -> stop everything
@@ -28,11 +28,11 @@ class SmsReceiver : BroadcastReceiver() {
         if (cmd != GuardService.ACTION_FIND && cmd != GuardService.ACTION_WHERE && cmd != GuardService.ACTION_STOP) return
         if (!Prefs.isAuthorizedSender(context, sender)) return
         if (!Prefs.hasPin(context)) return
-        if (Prefs.isLockedOut(context)) return
+        if (Prefs.isLockedOut(context, sender)) return
 
         val pin = parts.getOrNull(1) ?: return
         if (!Prefs.checkPin(context, pin)) {
-            Prefs.recordFailure(context)
+            Prefs.recordFailure(context, sender)
             return
         }
         Prefs.clearFailures(context)
